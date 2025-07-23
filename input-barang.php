@@ -5,129 +5,163 @@ if (!$_SESSION['id_user']) {
     exit;
 }
 include 'koneksi.php';
+
+// Handle AJAX request untuk load data dengan search dan pagination
+if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'load_table') {
+    $search = isset($_POST['search']) ? mysqli_real_escape_string($connection, $_POST['search']) : '';
+    $page = isset($_POST['page']) ? (int)$_POST['page'] : 1;
+    $limit = 10; // Items per page
+    $offset = ($page - 1) * $limit;
+    
+    // Build search query
+    $where_clause = "";
+    if (!empty($search)) {
+        $where_clause = "WHERE nama_barang LIKE '%$search%' 
+                       OR kode_barang LIKE '%$search%' 
+                       OR lokasi_barang LIKE '%$search%' 
+                       OR keadaan_barang LIKE '%$search%'";
+    }
+    
+    // Get total records for pagination
+    $count_query = "SELECT COUNT(*) as total FROM tbl_barang $where_clause";
+    $count_result = mysqli_query($connection, $count_query);
+    $total_records = mysqli_fetch_array($count_result)['total'];
+    $total_pages = ceil($total_records / $limit);
+    
+    // Get data with limit
+    $query = "SELECT * FROM tbl_barang $where_clause ORDER BY id DESC LIMIT $limit OFFSET $offset";
+    $result = mysqli_query($connection, $query);
+    
+    $html = '';
+    $no = $offset + 1;
+    
+    if (mysqli_num_rows($result) > 0) {
+        while ($row = mysqli_fetch_array($result)) {
+            $html .= "<tr>
+                <td>" . $no++ . "</td>
+                <td>" . htmlspecialchars($row['nama_barang']) . "</td>
+                <td>" . htmlspecialchars($row['kode_barang']) . "</td>
+                <td>" . htmlspecialchars($row['stock_barang']) . "</td>
+                <td>" . htmlspecialchars($row['lokasi_barang']) . "</td>
+                <td>" . htmlspecialchars($row['keadaan_barang']) . "</td>
+                <td>
+                    <div class='btn-group'>
+                        <button class='btn btn-warning btn-sm btn-edit'
+                            data-id='" . $row['id'] . "'
+                            data-nama='" . htmlspecialchars($row['nama_barang']) . "'
+                            data-kode='" . htmlspecialchars($row['kode_barang']) . "'
+                            data-stok='" . htmlspecialchars($row['stock_barang']) . "'
+                            data-lokasi='" . htmlspecialchars($row['lokasi_barang']) . "'
+                            data-keadaan='" . htmlspecialchars($row['keadaan_barang']) . "'>
+                            <i class='fa fa-edit'></i> 
+                        </button>
+                        <button class='btn btn-danger btn-sm btn-delete' data-id='" . $row['id'] . "'>
+                            <i class='fa fa-trash'></i> 
+                        </button>
+                    </div>
+                </td>
+            </tr>";
+        }
+    } else {
+        $html = "<tr><td colspan='7' class='text-center'>Tidak ada data ditemukan</td></tr>";
+    }
+    
+    // Return JSON response
+    echo json_encode([
+        'html' => $html,
+        'total_pages' => $total_pages,
+        'current_page' => $page,
+        'total_records' => $total_records,
+        'showing' => mysqli_num_rows($result)
+    ]);
+    exit;
+}
+
 ?>
 
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Vintage</title>
-
-    <!-- Bootstrap 5 CDN -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-
-    <!-- Font Awesome & Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel&family=EB+Garamond&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Dashboard</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css">
     <style>
-        body {
-            background-color: #fef8e7;
-            font-family: 'EB Garamond', serif;
-            color: #4b3e2b;
+        .search-wrapper {
+            margin-bottom: 20px;
         }
-
-        .vintage-card {
-            background-color: #fffaf3;
-            border: 1px solid #ccbfa3;
-            box-shadow: 2px 4px 12px rgba(0, 0, 0, 0.1);
+        
+        .pagination-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 15px;
         }
-
-        .vintage-header {
-            font-family: 'Cinzel', serif;
-            font-size: 1.4rem;
-            color: #3f2f1b;
-            border-bottom: 2px solid #b89b7d;
-            margin-bottom: 1rem;
+        
+        .table-info {
+            color: #6c757d;
+            font-size: 0.9em;
         }
-
-        .list-group-item.active {
-            background-color: #5b4636;
-            border-color: #5b4636;
+        
+        .pagination .page-link {
+            color: #007bff;
         }
-
-        .list-group-item {
-            background-color: #e8dbc4;
-            border-color: #c6b49c;
-            color: #3f2f1b;
+        
+        .pagination .page-item.active .page-link {
+            background-color: #007bff;
+            border-color: #007bff;
         }
-
-        .table thead {
-            background-color: #5b4636;
-            color: #fff;
-        }
-
-        .form-control, .form-select {
-            background-color: #fffaf0;
-            border: 1px solid #d5c4a1;
-        }
-
-        .btn-success {
-            background-color: #6c8b5f;
-            border-color: #6c8b5f;
-        }
-
-        .btn-secondary {
-            background-color: #9e8c75;
-            border-color: #9e8c75;
-        }
-
-        .btn-warning {
-            background-color: #d9a441;
-            border-color: #d9a441;
-        }
-
-        .btn-danger {
-            background-color: #c45c4e;
-            border-color: #c45c4e;
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #6c757d;
         }
     </style>
 </head>
 
 <body>
-    <div class="container py-5">
+    <div class="container" style="margin-top: 50px">
         <div class="row">
-            <!-- Sidebar -->
+
             <div class="col-md-3">
-                <ul class="list-group mb-4">
-                    <li class="list-group-item active fw-bold">MAIN MENU</li>
-                    <a href="dashboard.php" class="list-group-item text-decoration-none">Dashboard</a>
-                    <a href="input-barang.php" class="list-group-item text-decoration-none">Inventory</a>
-                    <a href="logout.php" class="list-group-item text-decoration-none">Logout</a>
+                <ul class="list-group">
+                    <li class="list-group-item active">MAIN MENU</li>
+                    <a href="dashboard.php" class="list-group-item" style="color: #212529;">Dashboard</a>
+                    <a href="input-barang.php" class="list-group-item" style="color: #212529;">Inventory</a>
+                    <a href="logout.php" class="list-group-item" style="color: #212529;">Logout</a>
                 </ul>
             </div>
 
-            <!-- Main Content -->
             <div class="col-md-9">
-                <div class="card vintage-card mb-4">
+                <div class="card mb-4 shadow-sm">
                     <div class="card-body">
-                        <div class="vintage-header">Form Tambah Barang</div>
+                        <h5 class="card-title mb-4">Tambah Barang</h5> <hr>
                         <form id="formBarang" method="POST">
                             <input type="hidden" id="id_barang" name="id_barang">
-                            <div class="row mb-3">
-                                <div class="col-md-4">
-                                    <label for="nama_barang" class="form-label">Nama Barang</label>
+                            <div class="form-row">
+                                <div class="form-group col-md-4">
+                                    <label for="nama_barang">Nama Barang</label>
                                     <input type="text" class="form-control" id="nama_barang" name="nama_barang" required>
                                 </div>
-                                <div class="col-md-4">
-                                    <label for="kode_barang" class="form-label">Kode Barang</label>
+                                <div class="form-group col-md-4">
+                                    <label for="kode_barang">Kode Barang</label>
                                     <input type="text" class="form-control" id="kode_barang" name="kode_barang" required>
                                 </div>
                             </div>
-                            <div class="row mb-3">
-                                <div class="col-md-4">
-                                    <label for="stock_barang" class="form-label">Stok Barang</label>
-                                    <input type="number" class="form-control" id="stock_barang" name="stock_barang" min="0" required>
+                            <div class="form-row">
+                                <div class="form-group col-md-4">
+                                    <label for="stock_barang">Stok Barang</label>
+                                    <input type="number" class="form-control" id="stock_barang" name="stock_barang" required min="0">
                                 </div>
-                                <div class="col-md-4">
-                                    <label for="lokasi_barang" class="form-label">Lokasi Barang</label>
+                                <div class="form-group col-md-4">
+                                    <label for="lokasi_barang">Lokasi Barang</label>
                                     <input type="text" class="form-control" id="lokasi_barang" name="lokasi_barang" required>
                                 </div>
-                                <div class="col-md-4">
-                                    <label for="keadaan_barang" class="form-label">Keadaan Barang</label>
-                                    <select class="form-select" id="keadaan_barang" name="keadaan_barang" required>
+                                <div class="form-group col-md-4">
+                                    <label for="keadaan_barang">Keadaan Barang</label>
+                                    <select class="form-control" id="keadaan_barang" name="keadaan_barang" required>
                                         <option value="">Pilih Keadaan</option>
                                         <option value="baik">Baik</option>
                                         <option value="jelek">Jelek</option>
@@ -135,11 +169,12 @@ include 'koneksi.php';
                                     </select>
                                 </div>
                             </div>
-                            <div class="text-end">
+                            <div class="text-right">
                                 <button type="submit" class="btn btn-success px-4">
                                     <i class="fa fa-plus"></i> Tambah Barang
                                 </button>
-                                <button type="button" class="btn btn-secondary px-4 ms-2" id="btnKembalikan">
+                                
+                                <button type="button" class="btn btn-secondary px-4 ml-2" id="btnKembalikan">
                                     <i class="fa fa-arrow-left"></i> Kembalikan
                                 </button>
                             </div>
@@ -147,53 +182,58 @@ include 'koneksi.php';
                     </div>
                 </div>
 
-                <div class="card vintage-card">
+                <div class="card shadow-sm">
                     <div class="card-body">
-                        <div class="vintage-header">Daftar Barang</div>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h2 class="mb-0">List Barang</h2>
+                        </div>
+                        <hr>
+                        
+                        <!-- Search Box -->
+                        <div class="search-wrapper">
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" id="searchInput" placeholder="Cari nama, kode, lokasi, atau keadaan barang...">
+                                        <div class="input-group-append">
+                                            <button class="btn btn-outline-secondary" type="button" id="clearSearch">
+                                                <i class="fa fa-times"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <div class="table-responsive">
-                            <table class="table table-bordered table-striped">
-                                <thead>
+                            <table class="table table-bordered table-striped" id="tabelBarang">
+                                <thead class="thead-dark">
                                     <tr>
                                         <th>No</th>
                                         <th>Nama Barang</th>
                                         <th>Kode Barang</th>
-                                        <th>Stok</th>
-                                        <th>Lokasi</th>
-                                        <th>Keadaan</th>
+                                        <th>Stok Barang</th>
+                                        <th>Lokasi Barang</th>
+                                        <th>Keadaan Barang</th>
                                         <th>Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody id="dataBarang">
-                                    <?php
-                                    $no = 1;
-                                    $query = mysqli_query($connection, "SELECT * FROM tbl_barang");
-                                    while ($row = mysqli_fetch_array($query)) {
-                                        echo "<tr>
-                                            <td>" . $no++ . "</td>
-                                            <td>" . htmlspecialchars($row['nama_barang']) . "</td>
-                                            <td>" . htmlspecialchars($row['kode_barang']) . "</td>
-                                            <td>" . htmlspecialchars($row['stock_barang']) . "</td>
-                                            <td>" . htmlspecialchars($row['lokasi_barang']) . "</td>
-                                            <td>" . htmlspecialchars($row['keadaan_barang']) . "</td>
-                                            <td>
-                                                <button class='btn btn-warning btn-sm btn-edit'
-                                                    data-id='" . $row['id'] . "'
-                                                    data-nama='" . htmlspecialchars($row['nama_barang']) . "'
-                                                    data-kode='" . htmlspecialchars($row['kode_barang']) . "'
-                                                    data-stok='" . htmlspecialchars($row['stock_barang']) . "'
-                                                    data-lokasi='" . htmlspecialchars($row['lokasi_barang']) . "'
-                                                    data-keadaan='" . htmlspecialchars($row['keadaan_barang']) . "'>
-                                                    <i class='fa fa-edit'></i>
-                                                </button>
-                                                <button class='btn btn-danger btn-sm btn-delete' data-id='" . $row['id'] . "'>
-                                                    <i class='fa fa-trash'></i>
-                                                </button>
-                                            </td>
-                                        </tr>";
-                                    }
-                                    ?>
+                                    <!-- Data akan dimuat via AJAX -->
                                 </tbody>
                             </table>
+                        </div>
+                        
+                        <!-- Pagination Info and Controls -->
+                        <div class="pagination-info">
+                            <div class="table-info" id="tableInfo">
+                                Menampilkan 0 dari 0 data
+                            </div>
+                            <nav>
+                                <ul class="pagination pagination-sm mb-0" id="pagination">
+                                    <!-- Pagination akan dibuat via JavaScript -->
+                                </ul>
+                            </nav>
                         </div>
                     </div>
                 </div>
@@ -201,13 +241,141 @@ include 'koneksi.php';
         </div>
     </div>
 
-    <!-- JS Libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js"></script>
 
     <script>
         $(document).ready(function() {
+            let currentPage = 1;
+            let currentSearch = '';
+            
+            // Load data saat halaman pertama kali dimuat
+            loadTableData();
+            
+            // Search functionality dengan debounce
+            let searchTimeout;
+            $('#searchInput').on('input', function() {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(function() {
+                    currentSearch = $('#searchInput').val().trim();
+                    currentPage = 1;
+                    loadTableData();
+                }, 500); // Delay 500ms
+            });
+            
+            // Clear search
+            $('#clearSearch').click(function() {
+                $('#searchInput').val('');
+                currentSearch = '';
+                currentPage = 1;
+                loadTableData();
+            });
+            
+            // Function untuk load data table
+            function loadTableData() {
+                // Show loading
+                $('#dataBarang').html('<tr><td colspan="7" class="loading"><i class="fa fa-spinner fa-spin"></i> Memuat data...</td></tr>');
+                
+                $.ajax({
+                    url: window.location.href,
+                    type: 'POST',
+                    data: {
+                        ajax_action: 'load_table',
+                        search: currentSearch,
+                        page: currentPage
+                    },
+                    dataType: 'json',
+                    success: function(response) {
+                        // Update table content
+                        $('#dataBarang').html(response.html);
+                        
+                        // Update pagination
+                        generatePagination(response.total_pages, response.current_page);
+                        
+                        // Update info
+                        $('#tableInfo').text(`Menampilkan ${response.showing} dari ${response.total_records} data`);
+                    },
+                    error: function() {
+                        $('#dataBarang').html('<tr><td colspan="7" class="text-center text-danger">Error memuat data</td></tr>');
+                    }
+                });
+            }
+            
+            // Function untuk generate pagination
+            function generatePagination(totalPages, currentPageNum) {
+                let paginationHtml = '';
+                
+                if (totalPages > 1) {
+                    // Previous button
+                    if (currentPageNum > 1) {
+                        paginationHtml += `<li class="page-item">
+                            <a class="page-link" href="#" data-page="${currentPageNum - 1}">Previous</a>
+                        </li>`;
+                    }
+                    
+                    // Page numbers
+                    let startPage = Math.max(1, currentPageNum - 2);
+                    let endPage = Math.min(totalPages, currentPageNum + 2);
+                    
+                    // First page
+                    if (startPage > 1) {
+                        paginationHtml += `<li class="page-item">
+                            <a class="page-link" href="#" data-page="1">1</a>
+                        </li>`;
+                        if (startPage > 2) {
+                            paginationHtml += `<li class="page-item disabled">
+                                <span class="page-link">...</span>
+                            </li>`;
+                        }
+                    }
+                    
+                    // Page numbers around current page
+                    for (let i = startPage; i <= endPage; i++) {
+                        let activeClass = i === currentPageNum ? 'active' : '';
+                        paginationHtml += `<li class="page-item ${activeClass}">
+                            <a class="page-link" href="#" data-page="${i}">${i}</a>
+                        </li>`;
+                    }
+                    
+                    // Last page
+                    if (endPage < totalPages) {
+                        if (endPage < totalPages - 1) {
+                            paginationHtml += `<li class="page-item disabled">
+                                <span class="page-link">...</span>
+                            </li>`;
+                        }
+                        paginationHtml += `<li class="page-item">
+                            <a class="page-link" href="#" data-page="${totalPages}">${totalPages}</a>
+                        </li>`;
+                    }
+                    
+                    // Next button
+                    if (currentPageNum < totalPages) {
+                        paginationHtml += `<li class="page-item">
+                            <a class="page-link" href="#" data-page="${currentPageNum + 1}">Next</a>
+                        </li>`;
+                    }
+                }
+                
+                $('#pagination').html(paginationHtml);
+            }
+            
+            // Pagination click handler
+            $(document).on('click', '.page-link', function(e) {
+                e.preventDefault();
+                let page = $(this).data('page');
+                if (page && page !== currentPage) {
+                    currentPage = page;
+                    loadTableData();
+                }
+            });
+            
+            // Sisanya tetap sama seperti kode asli Anda
+            
+            // Simpan & Update Barang
             $('#formBarang').on('submit', function(e) {
                 e.preventDefault();
                 let url = $('#id_barang').val() === "" ? "cek-data.php" : "update-barang.php";
@@ -228,7 +396,8 @@ include 'koneksi.php';
                             $('#formBarang')[0].reset();
                             $('#id_barang').val('');
                             $('.btn-success').html('<i class="fa fa-plus"></i> Tambah Barang');
-                            reloadTableBarang();
+                            // Reload table data instead of reloadTableBarang()
+                            loadTableData();
                         } else {
                             Swal.fire('Gagal!', 'Terjadi kesalahan saat menyimpan.', 'error');
                         }
@@ -239,6 +408,7 @@ include 'koneksi.php';
                 });
             });
 
+            // Tombol Edit
             $(document).on('click', '.btn-edit', function() {
                 $('#id_barang').val($(this).data('id'));
                 $('#nama_barang').val($(this).data('nama'));
@@ -248,15 +418,17 @@ include 'koneksi.php';
                 $('#keadaan_barang').val($(this).data('keadaan'));
                 $('.btn-success').html('<i class="fa fa-save"></i> Update Barang');
             });
-
+            
             $('#btnKembalikan').click(function() {
                 $('#formBarang')[0].reset();
                 $('#id_barang').val('');
                 $('.btn-success').html('<i class="fa fa-plus"></i> Tambah Barang');
             });
 
+            // Tombol Delete
             $(document).on('click', '.btn-delete', function() {
                 const id = $(this).data('id');
+
                 Swal.fire({
                     title: 'Yakin ingin menghapus?',
                     text: "Data akan dihapus permanen!",
@@ -270,11 +442,14 @@ include 'koneksi.php';
                         $.ajax({
                             url: 'delete-barang.php',
                             type: 'GET',
-                            data: { id: id },
+                            data: {
+                                id: id
+                            },
                             success: function(response) {
                                 if (response.includes("success")) {
                                     Swal.fire('Terhapus!', 'Data berhasil dihapus.', 'success');
-                                    reloadTableBarang();
+                                    // Reload table data instead of reloadTableBarang()
+                                    loadTableData();
                                 } else {
                                     Swal.fire('Gagal!', 'Tidak bisa menghapus data.', 'error');
                                 }
@@ -286,18 +461,6 @@ include 'koneksi.php';
                     }
                 });
             });
-
-            function reloadTableBarang() {
-                $.ajax({
-                    url: window.location.href,
-                    type: "GET",
-                    dataType: "html",
-                    success: function(data) {
-                        const newTbody = $(data).find("#dataBarang").html();
-                        $("#dataBarang").html(newTbody);
-                    }
-                });
-            }
         });
     </script>
 </body>
