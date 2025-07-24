@@ -77,6 +77,44 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'load_table') {
     exit;
 }
 
+// Handle AJAX request untuk data print
+if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'get_print_data') {
+    $search = isset($_POST['search']) ? mysqli_real_escape_string($connection, $_POST['search']) : '';
+    
+    // Build search query
+    $where_clause = "";
+    if (!empty($search)) {
+        $where_clause = "WHERE nama_barang LIKE '%$search%' 
+                       OR kode_barang LIKE '%$search%' 
+                       OR lokasi_barang LIKE '%$search%' 
+                       OR keadaan_barang LIKE '%$search%'";
+    }
+    
+    // Get all data for print (no pagination)
+    $query = "SELECT * FROM tbl_barang $where_clause ORDER BY nama_barang ASC";
+    $result = mysqli_query($connection, $query);
+    
+    $data = [];
+    $no = 1;
+    while ($row = mysqli_fetch_array($result)) {
+        $data[] = [
+            'no' => $no++,
+            'nama_barang' => htmlspecialchars($row['nama_barang']),
+            'kode_barang' => htmlspecialchars($row['kode_barang']),
+            'stock_barang' => htmlspecialchars($row['stock_barang']),
+            'lokasi_barang' => htmlspecialchars($row['lokasi_barang']),
+            'keadaan_barang' => htmlspecialchars($row['keadaan_barang'])
+        ];
+    }
+    
+    echo json_encode([
+        'data' => $data,
+        'total' => count($data),
+        'search_term' => $search
+    ]);
+    exit;
+}
+
 ?>
 
 <!doctype html>
@@ -117,6 +155,67 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'load_table') {
             text-align: center;
             padding: 20px;
             color: #6c757d;
+        }
+        
+        .action-buttons {
+            margin-bottom: 15px;
+        }
+        
+        /* Print Styles */
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            
+            .print-area, .print-area * {
+                visibility: visible;
+            }
+            
+            .print-area {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+            }
+            
+            .no-print {
+                display: none !important;
+            }
+            
+            .print-header {
+                text-align: center;
+                margin-bottom: 20px;
+                border-bottom: 2px solid #000;
+                padding-bottom: 10px;
+            }
+            
+            .print-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 12px;
+            }
+            
+            .print-table th,
+            .print-table td {
+                border: 1px solid #000;
+                padding: 5px;
+                text-align: left;
+            }
+            
+            .print-table th {
+                background-color: #f8f9fa;
+                font-weight: bold;
+            }
+            
+            .print-footer {
+                margin-top: 20px;
+                font-size: 10px;
+                text-align: right;
+            }
+        }
+        
+        .print-area {
+            display: none;
         }
     </style>
 </head>
@@ -189,10 +288,11 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'load_table') {
                         </div>
                         <hr>
                         
-                        <!-- Search Box -->
-                        <div class="search-wrapper">
+                        <!-- Action Buttons -->
+                        <div class="action-buttons">
                             <div class="row">
-                                <div class="col-md-4">
+                                <div class="col-md-8">
+                                    <!-- Search Box -->
                                     <div class="input-group">
                                         <input type="text" class="form-control" id="searchInput" placeholder="Cari nama, kode, lokasi, atau keadaan barang...">
                                         <div class="input-group-append">
@@ -200,6 +300,16 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'load_table') {
                                                 <i class="fa fa-times"></i>
                                             </button>
                                         </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="btn-group float-right">
+                                        <button class="btn btn-info" id="btnPrint">
+                                            <i class="fa fa-print"></i> Print Data
+                                        </button>
+                                        <button class="btn btn-success" id="btnPrintAll">
+                                            <i class="fa fa-print"></i> Print Semua
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -238,6 +348,36 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'load_table') {
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Print Area (Hidden) -->
+    <div class="print-area" id="printArea">
+        <div class="print-header">
+            <h2>LAPORAN DATA INVENTORY BARANG</h2>
+            <p id="printSubtitle">Semua Data Barang</p>
+            <p>Tanggal Cetak: <span id="printDate"></span></p>
+        </div>
+        
+        <table class="print-table" id="printTable">
+            <thead>
+                <tr>
+                    <th style="width: 5%;">No</th>
+                    <th style="width: 25%;">Nama Barang</th>
+                    <th style="width: 15%;">Kode Barang</th>
+                    <th style="width: 10%;">Stok</th>
+                    <th style="width: 25%;">Lokasi</th>
+                    <th style="width: 20%;">Keadaan</th>
+                </tr>
+            </thead>
+            <tbody id="printTableBody">
+                <!-- Data akan diisi via JavaScript -->
+            </tbody>
+        </table>
+        
+        <div class="print-footer">
+            <p>Total Data: <span id="printTotal">0</span> item</p>
+            <p>Dicetak pada: <span id="printTimestamp"></span></p>
         </div>
     </div>
 
@@ -373,7 +513,116 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'load_table') {
                 }
             });
             
-            // Sisanya tetap sama seperti kode asli Anda
+            // Print Functions
+            function formatDate(date) {
+                const options = {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                };
+                return date.toLocaleDateString('id-ID', options);
+            }
+            
+            function generatePrintData(data, searchTerm = '') {
+                let tableBody = '';
+                data.forEach(function(item) {
+                    tableBody += `
+                        <tr>
+                            <td>${item.no}</td>
+                            <td>${item.nama_barang}</td>
+                            <td>${item.kode_barang}</td>
+                            <td>${item.stock_barang}</td>
+                            <td>${item.lokasi_barang}</td>
+                            <td>${item.keadaan_barang}</td>
+                        </tr>
+                    `;
+                });
+                
+                $('#printTableBody').html(tableBody);
+                $('#printTotal').text(data.length);
+                
+                // Set print subtitle
+                if (searchTerm) {
+                    $('#printSubtitle').text(`Data Hasil Pencarian: "${searchTerm}"`);
+                } else {
+                    $('#printSubtitle').text('Semua Data Barang');
+                }
+                
+                // Set dates
+                const now = new Date();
+                $('#printDate').text(now.toLocaleDateString('id-ID'));
+                $('#printTimestamp').text(formatDate(now));
+            }
+            
+            // Print filtered data (berdasarkan pencarian saat ini)
+            $('#btnPrint').click(function() {
+                const button = $(this);
+                button.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Loading...');
+                
+                $.ajax({
+                    url: window.location.href,
+                    type: 'POST',
+                    data: {
+                        ajax_action: 'get_print_data',
+                        search: currentSearch
+                    },
+                    dataType: 'json',
+                    success: function(response) {
+                        if (response.data.length > 0) {
+                            generatePrintData(response.data, response.search_term);
+                            
+                            // Show print area and trigger print
+                            $('#printArea').show();
+                            window.print();
+                            $('#printArea').hide();
+                        } else {
+                            Swal.fire('Info', 'Tidak ada data untuk dicetak.', 'info');
+                        }
+                    },
+                    error: function() {
+                        Swal.fire('Error', 'Gagal memuat data untuk print.', 'error');
+                    },
+                    complete: function() {
+                        button.prop('disabled', false).html('<i class="fa fa-print"></i> Print Data');
+                    }
+                });
+            });
+            
+            // Print all data (tanpa filter pencarian)
+            $('#btnPrintAll').click(function() {
+                const button = $(this);
+                button.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Loading...');
+                
+                $.ajax({
+                    url: window.location.href,
+                    type: 'POST',
+                    data: {
+                        ajax_action: 'get_print_data',
+                        search: '' // Kosong untuk semua data
+                    },
+                    dataType: 'json',
+                    success: function(response) {
+                        if (response.data.length > 0) {
+                            generatePrintData(response.data, '');
+                            
+                            // Show print area and trigger print
+                            $('#printArea').show();
+                            window.print();
+                            $('#printArea').hide();
+                        } else {
+                            Swal.fire('Info', 'Tidak ada data untuk dicetak.', 'info');
+                        }
+                    },
+                    error: function() {
+                        Swal.fire('Error', 'Gagal memuat data untuk print.', 'error');
+                    },
+                    complete: function() {
+                        button.prop('disabled', false).html('<i class="fa fa-print"></i> Print Semua');
+                    }
+                });
+            });
             
             // Simpan & Update Barang
             $('#formBarang').on('submit', function(e) {
@@ -396,7 +645,6 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'load_table') {
                             $('#formBarang')[0].reset();
                             $('#id_barang').val('');
                             $('.btn-success').html('<i class="fa fa-plus"></i> Tambah Barang');
-                            // Reload table data instead of reloadTableBarang()
                             loadTableData();
                         } else {
                             Swal.fire('Gagal!', 'Terjadi kesalahan saat menyimpan.', 'error');
@@ -448,7 +696,6 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'load_table') {
                             success: function(response) {
                                 if (response.includes("success")) {
                                     Swal.fire('Terhapus!', 'Data berhasil dihapus.', 'success');
-                                    // Reload table data instead of reloadTableBarang()
                                     loadTableData();
                                 } else {
                                     Swal.fire('Gagal!', 'Tidak bisa menghapus data.', 'error');
