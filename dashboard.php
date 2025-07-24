@@ -22,14 +22,14 @@
     <div class="container" style="margin-top: 50px">
       <div class="row">
         
-          <div class="col-md-3">
-            <ul class="list-group">
-              <li class="list-group-item active">MAIN MENU</li>
-              <a href="dashboard.php" class="list-group-item" style="color: #212529;">Dashboard</a>
-              <a href="input-barang.php" class="list-group-item" style="color: #212529;">Inventory</a>
-              <a href="logout.php" class="list-group-item" style="color: #212529;">Logout</a>
-            </ul>
-          </div>
+            <div class="col-md-3">
+                <ul class="list-group">
+                    <li class="list-group-item list-group-item-primary font-weight-bold">MAIN MENU</li>
+                    <a href="dashboard.php" class="list-group-item list-group-item-action"> Dashboard</a>
+                    <a href="input-barang.php" class="list-group-item list-group-item-action">Inventory</a>
+                    <a href="logout.php" class="list-group-item list-group-item-action">Logout</a>
+                </ul>
+            </div>
 
           <div class="col-md-9">
             <div class="card">
